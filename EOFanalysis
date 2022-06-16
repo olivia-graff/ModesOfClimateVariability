@@ -1,0 +1,395 @@
+%Q1: How to Identify the Arctic Oscillation (mslp) -------------------------------
+%Part 1: Load in mslp and sst matricies only at 0000Z and every third lat/lon point
+mslp = ncread('/mars/parfitt/eraint/surface_variables/mslp/mslp_79-18.nc','msl');%,[1 1 1], [Inf Inf Inf],[3 3 4]);
+%sst = ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','sst')%,[1 1 1], [Inf Inf Inf],[3 3 4]);
+latitude = ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','latitude');
+longitude = ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','longitude');
+latitude = latitude(1:3:241);longitude = longitude(1:3:480);
+mslp = mslp(1:3:480,1:3:241,1:4:58440); 
+
+%Part 2 ------------------------------------------------------------------
+%Assume linear trend and detrend mslp dataset at each point and remove
+%seasonal cycle
+mslp_reformat = NaN*zeros(160,81,40,366);%lon, lat, 40 years, 366 time steps (every 0Z-- for a leap year)
+timestep = 1;
+%reformat. start in 1979.
+%for n = 1:39%40
+for n = 1:40
+    if mod(n+6,4) > 0 %if it's not a leap year
+        mslp_reformat(:,:,n,1:59) = mslp(:,:,timestep:timestep+58);
+        mslp_reformat(:,:,n,60) = NaN;
+        mslp_reformat(:,:,n,61:366) = mslp(:,:,timestep+59:timestep+364);
+        timestep = timestep + 365;
+    else %if it is a leap year\
+        n
+        mslp_reformat(:,:,n,1:366) = mslp(:,:,timestep:timestep + 365);
+        timestep = timestep +366;
+    end
+end
+
+%calculate long term mean at each 0Z time step
+pertimestep_mean_mslp = NaN*zeros(160,81,366);
+for n = 1:366
+    pertimestep_mean_mslp(:,:,n) = nanmean(squeeze(mslp_reformat(:,:,:,n)),3);
+end
+
+%remove long term mean
+mslp_removeannual = zeros(160,81,40,366);
+for i = 1:160
+    for j = 1:81
+        for n = 1:40
+            for nn = 1:366
+                mslp_removeannual(i,j,n,nn)=mslp_reformat(i,j,n,nn)-pertimestep_mean_mslp(i,j,nn);
+            end
+        end
+    end
+end
+
+%reformat back
+mslp_reformatback = zeros(160,81,14610);
+timestep = 1;
+for n = 1:40 %start in 1979
+    if mod(n+6,4) > 0
+        mslp_reformatback(:,:,timestep:timestep+58) = mslp_removeannual(:,:,n,1:59);
+        mslp_reformatback(:,:,timestep+59:timestep+364) = mslp_removeannual(:,:,n,61:366);
+        timestep = timestep + 365;
+    else
+        mslp_reformatback(:,:,timestep:timestep+365) = mslp_removeannual(:,:,n,:);
+        timestep = timestep +366;
+    end
+end
+
+
+% 189345600
+% 388816
+
+%detrend
+mslp_detrended = zeros(160,81,14610);
+for i = 1:160
+    for j = 1:81
+        mslp_detrended(i,j,:) = detrend(squeeze(mslp_reformatback(i,j,:)));
+    end
+end
+
+%reformat detrended data 
+mslp_reformat_detrended = zeros(160,81,40,366);%lon, lat, 40 years, 366 time steps (every 0Z-- for a leap year)
+timestep = 1;
+%reformat. start in 1979.
+%for n = 1:39%40
+for n = 1:40
+    if mod(n+6,4) > 0 %if it's not a leap year
+        mslp_reformat_detrended(:,:,n,1:59) = mslp_detrended(:,:,timestep:timestep+58);
+        mslp_reformat_detrended(:,:,n,60) = NaN;
+        mslp_reformat_detrended(:,:,n,61:366) = mslp_detrended(:,:,timestep+59:timestep+364);
+        timestep = timestep + 365;
+    else %if it is a leap year\
+        n
+        mslp_reformat_detrended(:,:,n,1:366) = mslp_detrended(:,:,timestep:timestep + 365);
+        timestep = timestep +366;
+    end
+end
+
+%Part 3 -------------------------------------------------------------------
+%isolate D, J and F from mslp anomalies
+timestep = 1;
+d_mslp_anom = NaN*zeros(160,81,40,31);%lon, lat, 40 years, 31 days only at 0Z
+j_mslp_anom = NaN*zeros(160,81,40,31);
+f_mslp_anom = NaN*zeros(160,81,40,29);
+for n = 1:40
+        d_mslp_anom(:,:,n,1:31) = mslp_reformat_detrended(:,:,n,336:366);
+        j_mslp_anom(:,:,n,1:31) = mslp_reformat_detrended(:,:,n,1:31);
+        f_mslp_anom(:,:,n,1:29) = mslp_reformat_detrended(:,:,n,32:60);
+end
+
+%Part 4 ------------------------------------------------------------------
+%find monthly means -- this can probably be done much easier? 
+djf_mslp_montly_mean = zeros(160,81,117);
+monthcount = 0;
+for n = 1:40
+    if n ==1 %not including 1979 jan/feb 
+        monthcount = monthcount + 1;
+        djf_mslp_montly_mean(:,:,monthcount) = nanmean(squeeze(d_mslp_anom(:,:,n,:)),3);%dec 79
+    elseif n <=39 %not including 2018's december
+        monthcount = monthcount + 1;
+        djf_mslp_montly_mean(:,:,monthcount)= nanmean(squeeze(j_mslp_anom(:,:,n,:)),3);%starts at jan 80
+        monthcount = monthcount + 1;
+        djf_mslp_montly_mean(:,:,monthcount)= nanmean(squeeze(f_mslp_anom(:,:,n,:)),3);%feb 80
+        monthcount = monthcount + 1;
+        djf_mslp_montly_mean(:,:,monthcount)= nanmean(squeeze(d_mslp_anom(:,:,n,:)),3);%dec 80
+    else
+        monthcount = monthcount + 1;
+        djf_mslp_montly_mean(:,:,monthcount)= nanmean(squeeze(j_mslp_anom(:,:,n,:)),3);% jan 18
+        monthcount = monthcount + 1;
+        djf_mslp_montly_mean(:,:,monthcount)= nanmean(squeeze(f_mslp_anom(:,:,n,:)),3);%feb 18
+    end
+%     monthcount
+end
+
+%Part 5 -------------------------------------------------------------------
+%Perform an EOF analysis on the DJF monthly mslp anoms north of 20.25N.
+%20.25N = index 32, need north of that, so its index 1: 90N to index 32:
+%20.25N
+mslp_eof = djf_mslp_montly_mean(:,1:32,:); %slices djf mslp from 20.25N to 90N 
+
+%Deal with NaN's before taking into account gridpoint spacing
+for i = 1:160
+    for j = 1:32
+        for n = 1:117
+            if isnan(mslp_eof(i,j,n)) 
+                mslp_eof(i,j,n) = (mslp_eof(i-1,j,n) + mslp_eof(i+1,j,n))/2;
+            end
+        end
+    end
+end
+
+%weight each gridpoint by cosine of latitude at each gridpoint because grid
+%spaces are not all weighted equally and change around the globe- this
+%makes up for that (step 2 in notes- but need it in this form for the second part of 'step 1')
+for i = 1:160
+    for j = 1:32
+        for n = 1:117
+            mslp_eof(i,j,n) = mslp_eof(i,j,n)*cosd(latitude(j));
+        end
+    end
+end
+
+%step 1: reshaping the matrix to be at location x time, instead of lat x lon x time 
+mslp_eof_loc = reshape(mslp_eof,[5120 117]); 
+
+%step 3: calculate the covariance of the matrix (cov = (1/n-1)*x'*Tx'),
+%where Tx' is the transposed matrix, told to ignore the (1/n-1) in class
+eof_cov = mslp_eof_loc*mslp_eof_loc.';%.' transposes the matrix without conjugates 
+
+%step4: calculate the determinant , [V,D] = eig(A) returns diagonal matrix D of eigenvalues and matrix V 
+%whose columns are the corresponding right eigenvectors, so that A*V = V*D.
+[V,D] = eigs(eof_cov,100); %doing the first 100 because that's what was done in class
+% The eigenvalues of the covariance matrix (the diagonals of the diagonalized covariance matrix)
+% indicate the variance in the transposed coordinate direction. Use this information to 
+% calculate the relative variance for each new variable by dividing the variances according 
+% to the eigenvectors by the sum of the variances
+eigenvalues = diag(D)/sum(diag(D)); 
+%plotting the eigenvalue spectrum 
+figure(1);
+plot(eigenvalues,'k+');title('Eigenvalue Spectrum, MSLP'); 
+
+%Plot the first 2 EOF's graphically 
+firstmode = V(:,1); %pulling the first mode
+firstmode_plot = reshape(firstmode,[160 32]); %reshaping to plot on map 
+secondmode = V(:,2);%pulling the second mode  
+secondmode_plot = reshape(secondmode,[160 32]); %reshaping to plot on map
+figure(2); 
+contour(longitude, latitude(1:32), firstmode_plot'); colorbar;title('First Mode EOF, MSLP'); 
+figure(3);
+contour(longitude, latitude(1:32), secondmode_plot'); colorbar;title('Second Mode EOF, MSLP'); 
+
+%calculate the first two principal components- principal componenets of the
+%first and second mode
+%The projection of the anomaly field X' onto the kth EOF ak, i.e. ck = X'ak
+%is the kth principal component 
+%pulls the first/second mode
+% -> gets an index of the leading eig vector mul x mslp -> first eigvect's "loading pattern"
+% -> get ts of how the mode varies throughout time (monthly) 
+pc_1 = V(:,1).'*mslp_eof_loc; 
+pc_2 = V(:,2).'*mslp_eof_loc;
+
+%need to find the average seasonal (djf) principal component 
+%of the first and second mode, first, condense the principal component 
+%time series into seasonal (39 djf's) instead of 117 months 
+pc_1_djf = zeros(39,1); 
+pc_2_djf = zeros(39,1); 
+monthcount = 1; 
+for n = 1:39 
+    pc_1_djf(n,1) = (pc_1(monthcount)+pc_1(monthcount+1) + pc_1(monthcount+2))/3; %avg d j f 
+    pc_2_djf(n,1) = (pc_2(monthcount)+pc_2(monthcount+1) + pc_2(monthcount+2))/3;
+    monthcount = monthcount + 3; 
+end
+%plot first and second principal modes for mslp 
+figure(4);
+subplot(2,1,1); 
+plot(1979:2017,pc_1_djf); title('First Principal Component, MSLP, DJF'); xlabel('year');
+subplot(2,1,2); 
+plot(1979:2017,pc_2_djf); title('Second Principal Component, MSLP, DJF');xlabel('year'); 
+
+%--------------------------------------------------------------------------
+%Q2. Using your index to Investigate impacts 
+%--------------------------------------------------------------------------
+
+%Part 1: Focus on the 1st principal component. Plot a composite average of 
+%the mean sea level pressure anomalies globally for the (1) top 10% of values in your 
+%time-series (2) bottom 10% of values in your time-series.
+
+%Use top 10 and bottom 10% from 1st principal component to determine what
+%to plot globally
+
+%top 10% of values 
+sorted = sort(pc_1(:),'descend');
+result = sorted(1:ceil(length(sorted)*0.1));  
+top10_mslp_value = min(result); %top 10% are >= than this value 
+
+%bottom 10% of values 
+sorted_bot = sort(pc_1(:),'ascend');
+result_bot = sorted_bot(1:ceil(length(sorted_bot)*0.1));  
+bot10_mslp_value = max(result_bot); %bottom 10% are <= this value 
+
+top10_mslp = zeros(160,81); %plot global slp anomalies 
+bottom10_mslp = zeros(160,81); 
+for n = 1:117
+    if pc_1(1,n) >= top10_mslp_value
+        top10_mslp = top10_mslp + djf_mslp_montly_mean(:,:,n); %adding together all monthly anom's that are in the top 10 %
+    elseif pc_1(1,n) <= bot10_mslp_value
+        bottom10_mslp = bottom10_mslp + djf_mslp_montly_mean(:,:,n); 
+    end
+end
+
+%calculating average mslp anomalies over all instances in top and bottom 10%
+t = (top10_mslp/12);
+b = (bottom10_mslp/12); 
+
+figure(5); 
+subplot(2,1,1);
+pcolor(longitude, latitude, t'); shading flat; colorbar;%caxis([-1.5e4 1.5e4]);
+title('Global Average MSLP Anomalies (Pa), top 10%'); 
+subplot(2,1,2);
+pcolor(longitude, latitude, b'); shading flat; colorbar;%caxis([-1.5e4 1.5e4]); 
+title('Global Average MSLP Anomalies (Pa), bottom 10%'); 
+
+%-------------------------------------------------------------------------
+%Repeat for SST
+%-------------------------------------------------------------------------
+
+%Part 1: Load in sst matricies only at 0000Z and every third lat/lon point
+sst = ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','sst');%,[1 1 1], [Inf Inf Inf],[3 3 4]);
+sst = sst(1:3:480,1:3:241,1:4:58440); 
+%Part 2 ------------------------------------------------------------------
+%Assume linear trend and detrend mslp dataset at each point and remove
+%seasonal cycle
+sst_reformat = NaN*zeros(160,81,40,366);%lon, lat, 40 years, 366 time steps (every 0Z-- for a leap year)
+timestep = 1;
+%reformat. start in 1979.
+for n = 1:40
+    if mod(n+6,4) > 0 %if it's not a leap year
+        sst_reformat(:,:,n,1:59) = sst(:,:,timestep:timestep+58);
+        sst_reformat(:,:,n,60) = NaN;
+        sst_reformat(:,:,n,61:366) = sst(:,:,timestep+59:timestep+364);
+        timestep = timestep + 365;
+    else %if it is a leap year
+        sst_reformat(:,:,n,1:366) = sst(:,:,timestep:timestep + 365);
+        timestep = timestep +366;
+    end
+end
+
+%calculate long term mean at each 0Z time step
+pertimestep_mean_sst = NaN*zeros(160,81,366);
+for n = 1:366
+    pertimestep_mean_sst(:,:,n) = nanmean(squeeze(sst_reformat(:,:,:,n)),3);
+end
+
+%remove long term mean
+sst_removeannual = zeros(160,81,40,366);
+for i = 1:160
+    for j = 1:81
+        for n = 1:40
+            for nn = 1:366
+                sst_removeannual(i,j,n,nn)=sst_reformat(i,j,n,nn)-pertimestep_mean_sst(i,j,nn);
+            end
+        end
+    end
+end
+
+%reformat back
+sst_reformatback = NaN*zeros(160,81,14610);
+timestep = 1;
+for n = 1:40 %start in 1979
+    if mod(n+6,4) > 0
+        sst_reformatback(:,:,timestep:timestep+58) = sst_removeannual(:,:,n,1:59);
+        sst_reformatback(:,:,timestep+59:timestep+364) = sst_removeannual(:,:,n,61:366);
+        timestep = timestep + 365;
+    else
+        sst_reformatback(:,:,timestep:timestep+365) = sst_removeannual(:,:,n,:);
+        timestep = timestep +366;
+    end
+end
+
+%detrend
+sst_detrended = zeros(160,81,14610);
+for i = 1:160
+    for j = 1:81
+        sst_detrended(i,j,:) = detrend(squeeze(sst_reformatback(i,j,:)));
+    end
+end
+
+%reformat detrended data 
+sst_reformat_detrended = NaN*zeros(160,81,40,366);%lon, lat, 40 years, 366 time steps (every 0Z-- for a leap year)
+timestep = 1;
+%reformat. start in 1979.
+for n = 1:40
+    if mod(n+6,4) > 0 %if it's not a leap year
+        sst_reformat_detrended(:,:,n,1:59) = sst_detrended(:,:,timestep:timestep+58);
+        sst_reformat_detrended(:,:,n,60) = NaN;
+        sst_reformat_detrended(:,:,n,61:366) = sst_detrended(:,:,timestep+59:timestep+364);
+        timestep = timestep + 365;
+    else %if it is a leap year
+        n
+        sst_reformat_detrended(:,:,n,1:366) = sst_detrended(:,:,timestep:timestep + 365);
+        timestep = timestep +366;
+    end
+end
+
+%Part 3 -------------------------------------------------------------------
+%isolate D, J and F from sst anomalies
+timestep = 1;
+d_sst_anom = NaN*zeros(160,81,40,31);%lon, lat, 40 years, 31 days only at 0Z
+j_sst_anom = NaN*zeros(160,81,40,31);
+f_sst_anom = NaN*zeros(160,81,40,29);
+for n = 1:40
+        d_sst_anom(:,:,n,1:31) = sst_reformat_detrended(:,:,n,335:365);
+        j_sst_anom(:,:,n,1:31) = sst_reformat_detrended(:,:,n,1:31);
+        f_sst_anom(:,:,n,1:29) = sst_reformat_detrended(:,:,n,32:60);
+end
+
+%Part 4 ------------------------------------------------------------------
+%find monthly means 
+djf_sst_montly_mean = NaN*zeros(160,81,117);
+monthcount = 0;
+for n = 1:40
+    if n ==1 %not including 1979 jan/feb 
+        monthcount = monthcount + 1;
+        djf_sst_montly_mean(:,:,monthcount) = nanmean(squeeze(d_sst_anom(:,:,n,:)),3);%dec 79
+    elseif n <=39 %not including 2018's december
+        monthcount = monthcount + 1;
+        djf_sst_montly_mean(:,:,monthcount)=  nanmean(squeeze(j_sst_anom(:,:,n,:)),3);%starts at jan 80
+        monthcount = monthcount + 1;
+        djf_sst_montly_mean(:,:,monthcount)=  nanmean(squeeze(f_sst_anom(:,:,n,:)),3);%feb 80
+        monthcount = monthcount + 1;
+        djf_sst_montly_mean(:,:,monthcount)=  nanmean(squeeze(d_sst_anom(:,:,n,:)),3);%dec 80
+    else
+        monthcount = monthcount + 1;
+        djf_sst_montly_mean(:,:,monthcount)=  nanmean(squeeze(j_sst_anom(:,:,n,:)),3);% jan 18
+        monthcount = monthcount + 1;
+        djf_sst_montly_mean(:,:,monthcount)=  nanmean(squeeze(f_sst_anom(:,:,n,:)),3);%feb 18
+    end
+end
+
+top10_sst = zeros(160,81); %plot global slp anomalies 
+bottom10_sst = zeros(160,81); 
+for n = 1:117
+    if pc_1(1,n) >= top10_mslp_value
+        top10_sst = top10_sst + djf_sst_montly_mean(:,:,n); %adding together all monthly anom's that are in the top 10 %
+    elseif pc_1(1,n) <= bot10_mslp_value
+        bottom10_sst = bottom10_sst + djf_sst_montly_mean(:,:,n); 
+    end
+end
+
+%calculating average of top and bottom anom's 
+tsst = (top10_sst/12);
+bsst = (bottom10_sst/12); 
+
+%plotting 
+figure(10); 
+subplot(2,1,1);
+pcolor(longitude, latitude, tsst'); shading flat; colorbar; caxis([-1 1]); 
+title('Global Average SST Anomalies (K), top 10%'); 
+subplot(2,1,2);
+pcolor(longitude, latitude, bsst'); shading flat; colorbar;caxis([-1 1]);  
+title('Global Average SST Anomalies (K), bottom 10%'); 
+
