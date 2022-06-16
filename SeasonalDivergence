@@ -1,0 +1,62 @@
+%load in data (longitude, latitude, zonal & meridional wind)
+%can use a lat/lon from one month as they're the same grid 
+latitude = ncread('/mars/parfitt/eraint/pressure_variables/2017-06.nc','latitude');
+longitude = ncread('/mars/parfitt/eraint/pressure_variables/2017-06.nc','longitude');
+%levels are 300, 600, 850, 900
+u06 = ncread('/mars/parfitt/eraint/pressure_variables/2017-06.nc','u');
+v06 = ncread('/mars/parfitt/eraint/pressure_variables/2017-06.nc','v');
+u12 = ncread('/mars/parfitt/eraint/pressure_variables/2017-12.nc','u');
+v12 = ncread('/mars/parfitt/eraint/pressure_variables/2017-12.nc','v');
+
+%isolate wind variables to 900hpa (4th level)
+u06_900 = squeeze(u06(:,:,4,:));
+v06_900 = squeeze(v06(:,:,4,:));
+u12_900 = squeeze(u12(:,:,4,:));
+v12_900 = squeeze(v12(:,:,4,:));
+
+%create a dummy matrix for every point (i,j)
+u06_900_zonaldiff = zeros(480,241);%June
+v06_900_meriddiff = zeros(480,241);%June
+u12_900_zonaldiff = zeros(480,241);%December
+v12_900_meriddiff = zeros(480,241);%December
+
+for n = 1:120
+    %accounting for endpoint problem (cutting off first and last point
+    %when looping through longitude (i) and latitude (j) points 
+    for i = 2:479
+        for j = 2:240
+            %using Equirectangular approximation to estimate dx and dy 
+            dx = 6371000 * (longitude(i+1)-longitude(i-1))*cosd(latitude(j))*pi/180;
+            dy = 6371000 * (latitude(j+1)-latitude(j-1))*pi/180;
+            %Looping through all lons, all lats, and all time stpes using a center
+            %difference approach to calculate du/dx and dv/dy for June &
+            %December
+            u06_900_zonaldiff(i,j,n) = (u06_900(i+1,j,n)-u06_900(i-1,j,n))/dx; %du/dx
+            v06_900_meriddiff(i,j,n) = (v06_900(i,j+1,n)-v06_900(i,j-1,n))/dy; %dv/dy
+            u12_900_zonaldiff(i,j,n) = (u12_900(i+1,j,n)-u12_900(i-1,j,n))/dx; %du/dx
+            v12_900_meriddiff(i,j,n) = (v12_900(i,j+1,n)-v12_900(i,j-1,n))/dy; %dv/dy
+        end
+    end
+end
+
+%Calculating Divergence: D = du/dx + dv/dy
+JuneDivg =  u06_900_zonaldiff + v06_900_meriddiff; 
+DecDivg = u12_900_zonaldiff + v12_900_meriddiff; 
+
+%Plotting June Mean Divergence
+figure(1);
+pcolor(longitude,latitude,mean(JuneDivg,3)');shading flat; cb = colorbar;cmocean balance;
+ylabel(cb,'900hPa wind divergence (s^{-1})');caxis([-1e-5 1e-5]);
+ylabel('Latitude');xlabel('Longitude'); title('June 2017 900hPa Mean Global Divergence');
+
+%Plotting December Mean Divergence
+figure(2);
+pcolor(longitude,latitude,mean(DecDivg,3)');shading flat; cb = colorbar;cmocean balance;
+ylabel(cb,'900hPa wind divergence (s^{-1})');caxis([-1e-5 1e-5]);
+ylabel('Latitude');xlabel('Longitude'); title('December 2017 900hPa Mean Global Divergence');
+
+%Plotting June Mean - Dec Mean Divergence
+figure(3);
+pcolor(longitude,latitude,(mean(JuneDivg,3)-mean(DecDivg,3))');shading flat; cb = colorbar;cmocean balance;
+ylabel(cb,'900hPa wind divergence (s^{-1})');caxis([-1e-5 1e-5]);
+ylabel('Latitude');xlabel('Longitude'); title('June - December 2017 900hPa Mean Global Divergence');
