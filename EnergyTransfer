@@ -1,0 +1,257 @@
+% Load data
+longitude = ncread('/mars/parfitt/era5/forecasts/RAD/lhf_shf/2016-12.nc','longitude');
+latitude = ncread('/mars/parfitt/era5/forecasts/RAD/lhf_shf/2016-12.nc','latitude');
+
+%Data is hourly and in J/m^2, need W/m^2, a Watt = J/s, an hour = 3600s
+%divide by 3600s (1hour) to get J/s*m^2 = W/m^2 (Process is done
+%throughout)
+declatent = ncread('/mars/parfitt/era5/forecasts/RAD/lhf_shf/2016-12.nc','slhf');
+decsensible = ncread('/mars/parfitt/era5/forecasts/RAD/lhf_shf/2016-12.nc','sshf'); 
+junelatent = ncread('/mars/parfitt/era5/forecasts/RAD/lhf_shf/2016-06.nc','slhf');
+junesensible = ncread('/mars/parfitt/era5/forecasts/RAD/lhf_shf/2016-06.nc','sshf'); 
+
+% Part 1 ------------------------------------------------------------------
+%plot average latent and sensible heat fluxes globally for June and
+%December Latent 
+figure(1);
+pcolor(longitude,latitude,((-1/3600).*(nanmean(declatent,3)))'); shading flat; colorbar;
+caxis([0 400]);cmocean dense;
+hold on; rectangle('Position',[290 36 5 2]);title('Dec 2016 Latent Heat Flux (W/m^2)');
+
+%December Sensible
+figure(2); 
+pcolor(longitude,latitude,((-1/3600)*(nanmean(decsensible,3)))'); shading flat; colorbar;
+caxis([-50 200]);cmocean deep;
+hold on; rectangle('Position',[290 36 5 2]);title('Dec 2016 Sensible Heat Flux (W/m^2)');
+
+%June Latent
+figure(3);
+pcolor(longitude,latitude,((-1/3600)*(nanmean(junelatent,3)))'); shading flat; colorbar;
+caxis([0 400]);cmocean dense;
+hold on; rectangle('Position',[290 36 5 2]);title('June 2016 Latent Heat Flux (W/m^2)');
+
+%June Sensible 
+figure(4); 
+pcolor(longitude,latitude,((-1/3600)*(nanmean(junesensible,3)))'); shading flat; colorbar;
+caxis([-50 200]);cmocean deep;
+hold on; rectangle('Position',[290 36 5 2]);title('June 2016 Sensible Heat Flux (W/m^2)');
+
+% Part 2-------------------------------------------------------------------
+
+%December domain means
+%Part 3 is also in this loop 
+totalenergy_dec = 0; 
+
+%set dummy variables to input data within the loop
+dl_box_mean = zeros(744,1);
+ds_box_mean = zeros(744,1);
+boxsum_l = 0; 
+boxsum_s = 0;
+areatotal = 0; 
+earthellipsoid = referenceSphere('earth','m');
+%area = areaquad(lat1,lon1,lat2,lon2)
+%Loop that calculates a domain-averaged hourly latent and sensible heat flux 
+for n = 1:744
+    %Resets each variable at the beginning of the loop - Fresh box for each
+    %timestep 
+    boxsum_l = 0; 
+    boxsum_s = 0; 
+    areatotal=0;
+    boxsum_l= 0; %total area for each box, reset for each hourly time step
+    
+    %Loop that calculates latent/sensible heat at each grid space and is dependent on
+    %size of grid space
+    for i = 1161:1181 %65W-70W for areaquad
+        for j = 209:217%36 to 38 for areaquad
+            %lon : 295-300 i
+            %lat : 36-38 j
+            %resets lat/lon values for each box 
+            lon1=0;lon2=0;lat1=0;lat2=0;area_step = 0; 
+            %assigns the value of lat/lons to use in areaquad based on
+            %which gridspace is being analyzed. Each grid space is 0.25 and
+            %centered in the middle of the box, so from the center, it is
+            %+/- 0.125 to the edge of each side of the box 
+            lon1 = 65 + (.25*(i-1161))-.125;
+            lon2 = 65 + (.25*(i-1161))+.125;
+            lat1 = 36 + (0.25*(j-209))-.125;
+            lat2 = 36 + (0.25*(j-209))+.125;
+            
+           %this conditional statement takes care of the corner boxes, and
+           %and only takes a quarter of the area, then multiplies that into the latent/sensible heat flux
+           %since only a quarter of the box is being used
+            if (i == 1181 && j == 209) || (i == 1181 && j == 217) || (i == 1161 && j == 209) || (i == 1161 && j == 217)
+                %area is 1/4
+                area_step = areaquad(lat1,lon1,lat2,lon2,earthellipsoid);
+                areatotal = areatotal + 0.25*area_step; 
+                boxsum_l = (0.25.*area_step.*declatent(i,j,n))+boxsum_l;
+                boxsum_s = (0.25.*area_step.*decsensible(i,j,n))+boxsum_s;
+                
+            %this conditional statement takes care of the boxes along the
+            %edges of the total box, (lat 36, 38, and lon 65W and 70W)
+            %it only takes half of the area, then multiplies that into the 
+            %latent/sensible heat flux since only a half of the box is being used
+            elseif i == 1181 || i == 1201 || j == 209 || j == 217
+                %area is 1/2
+                area_step = areaquad(lat1,lon1,lat2,lon2,earthellipsoid);
+                areatotal = areatotal + 0.5*area_step;
+                boxsum_l = (0.5.*area_step.*declatent(i,j,n))+boxsum_l;
+                boxsum_s = (0.5.*area_step.*decsensible(i,j,n))+boxsum_s;
+                
+            %this conditional statement is for the grid spaces on the
+            %inside of the large box. The entire box is being used, so the
+            %entire area is used when calculating 
+            else
+                %full area
+                area_step = areaquad(lat1,lon1,lat2,lon2,earthellipsoid);
+                areatotal = areatotal + area_step; 
+                boxsum_l = area_step.*declatent(i,j,n)+boxsum_l;
+                boxsum_s = area_step.*decsensible(i,j,n)+boxsum_s;
+            end
+        end
+    end
+    
+    %finding the box-ly mean at each hourly time step.
+    %dividing by area total because above, each grid space was multiplied
+    %by the amount of the grid space that was being used, must then divide
+    %by the total area to find the mean of the entire box. (W/m^2) 
+    dl_box_mean(n,1) = boxsum_l/(-3600*areatotal); 
+    ds_box_mean(n,1) = boxsum_s/(-3600*areatotal); 
+    
+    %Used in part 4. Adding together latent and sensible heat, multiplied
+    %by time to find the total energy for december 
+    totalenergy_dec = -(boxsum_l + boxsum_s) + totalenergy_dec;
+end
+
+%Plotting the time series 
+figure(5);
+ts_dec_latent = timeseries(dl_box_mean(:,1),1:744); 
+plot(ts_dec_latent); xlabel('Hours');ylabel('Latent Heat Flux (W/m^2)');
+title('Dec 2016 Hourly Mean Latent Heat Flux (W/m^2)');
+
+figure(6);
+ts_dec_sensible = timeseries(ds_box_mean(:,1),1:744); 
+plot(ts_dec_sensible); xlabel('Hours');ylabel('Sensible Heat Flux (W/m^2)');
+title('Dec 2016 Hourly Mean Sensible Heat Flux (W/m^2)');
+
+fprintf('Energy transferred by the total heat flux across the 70W-65W, 36N-38N box in Dec 2016 is: ');
+totalenergy_dec 
+
+%June domain means
+
+%set dummy variables to input data within the loop
+jl_box_mean = zeros(720,1);
+js_box_mean = zeros(720,1);
+boxsum_l = 0; 
+boxsum_s = 0;
+count = 0;
+areatotal = 0; 
+
+%area = areaquad(lat1,lon1,lat2,lon2)
+%Loop that calculates a domain-averaged hourly latent and sensible heat flux 
+for n = 1:720
+    %Resets each variable at the beginning of the loop - Fresh box for each
+    %timestep 
+    count = 0; %divides by number of gridpoints in the box
+    boxsum_l = 0;
+    boxsum_s = 0;
+    areatotal = 0; %total area for each box, reset for each time step
+    
+    %Loop that calculates latent/sensible heat at each grid space and is dependent on
+    %size of grid space
+    for i = 1161:1181%65W-70W for areaquad
+        for j = 209:217%36 to 38 for areaquad
+            %lon : 295-300 i
+            %lat : 36-38 j
+            %assigns the value of lat/lons to use in areaquad based on
+            %which gridspace is being analyzed. Each grid space is 0.25 and
+            %centered in the middle of the box, so from the center, it is
+            %+/- 0.125 to the edge of each side of the box
+            lon1=0;lon2=0;lat1=0;lat2=0;area_step = 0;
+            %lon1 = 65 + (.25*(i-1181.25));
+            lon1 = 65 + (.25*(i-1161))-.125;
+            lon2 = 65 + (.25*(i-1161))+.125;
+            lat1 = 36 + (0.25*(j-209))-.125;
+            lat2 = 36 + (0.25*(j-209))+.125;
+            
+           %this conditional statement takes care of the corner boxes, and
+           %and only takes a quarter of the area, then multiplies that into the latent/sensible heat flux
+           %since only a quarter of the box is being used
+            if (i == 1181 && j == 209) || (i == 1181 && j == 217) || (i == 1161 && j == 209) || (i == 1161 && j == 217)
+                %area is 1/4
+                area_step = areaquad(lat1,lon1,lat2,lon2,earthellipsoid);
+                areatotal = areatotal + 0.25*area_step; 
+                boxsum_l = (0.25.*area_step.*junelatent(i,j,n))+boxsum_l;
+                boxsum_s = (0.25.*area_step.*junesensible(i,j,n))+boxsum_s;
+                
+            %this conditional statement takes care of the boxes along the
+            %edges of the total box, (lat 36, 38, and lon 65W and 70W)
+            %it only takes half of the area, then multiplies that into the 
+            %latent/sensible heat flux since only a half of the box is being used    
+            elseif i == 1181 || i == 1201 || j == 209 || j == 217 
+                %area is 1/2
+                area_step = areaquad(lat1,lon1,lat2,lon2,earthellipsoid);
+                areatotal = areatotal + 0.5*area_step; 
+                boxsum_l = (0.5.*area_step.*junelatent(i,j,n))+boxsum_l;
+                boxsum_s = (0.5.*area_step.*junesensible(i,j,n))+boxsum_s;
+                
+            %this conditional statement is for the grid spaces on the
+            %inside of the large box. The entire box is being used, so the
+            %entire area is used when calculating     
+            else 
+                %full area 
+                area_step = areaquad(lat1,lon1,lat2,lon2,earthellipsoid);
+                areatotal = areatotal + area_step; 
+                boxsum_l = area_step.*junelatent(i,j,n)+boxsum_l;
+                boxsum_s = area_step.*junesensible(i,j,n)+boxsum_s;
+            end
+        end
+    end
+    %finding the box-ly mean at each hourly time step.
+    %dividing by area total because above, each grid space was multiplied
+    %by the amount of the grid space that was being used, must then divide
+    %by the total area to find the mean of the entire box. (W/m^2) 
+    jl_box_mean(n,1) = boxsum_l/(-3600*areatotal); 
+    js_box_mean(n,1) = boxsum_s/(-3600*areatotal); 
+end
+
+%Plotting the time series 
+figure(7);
+ts_june_latent = timeseries(jl_box_mean(:,1),1:720); 
+plot(ts_june_latent); xlabel('Hours');ylabel('Latent Heat Flux (W/m^2)');
+title('June 2016 Hourly Mean Latent Heat Flux (W/m^2)');
+
+figure(8);
+ts_june_sensible = timeseries(js_box_mean(:,1),1:720); 
+plot(ts_june_sensible); xlabel('Hours');ylabel('Sensible Heat Flux (W/m^2)');
+title('June 2016 Hourly Mean Sensible Heat Flux (W/m^2)');
+
+% Part 4
+
+%Adding the latent and sensible heat flux in december to find total heat
+%flux in decemebr across the box at each hourly time step
+d_box_total = dl_box_mean +ds_box_mean;
+
+%using the find function to locate indicies where these values are > 400 W/m^2
+loc = find(d_box_total > 400);
+greaterenergy = 0; 
+
+%looping through these locations to find the energy transferred when its >
+%400 W/m^2
+for i = 1:length(loc)
+    %multiplying by 3600 twice to make up for these variables being divided
+    %by 3600 earlier when being calculated hourly, then again because
+    %energy = power*time, and cancal out dividing by surface area when
+    %dl_box_mean and ds_box_mean were initally calculated 
+    greaterenergy = (3600.*areatotal.*d_box_total(loc(i),1))+greaterenergy;
+end
+
+%using the number of instances (hours) the flux is > 400W/m^2  divided by total
+%hours to find the percent of time when time when flux > 400W/m^2
+fprintf('Percentage of the time is it greater than 400Wm-2: ');
+percenttime = (length(loc)/744)*100
+
+%using total energy calculated in part 3 as the denominator to calculate
+%fraction of total energy when energy is > 400W/m^2 
+fprintf('Fraction of total energy transferred where the domain-averaged total heat flux is greater than 400Wm-2: ');
+fraction_of_energy = (greaterenergy/totalenergy_dec)
+
