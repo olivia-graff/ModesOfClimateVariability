@@ -94,7 +94,6 @@ end
 
 %multiplying by 1000 within the plot to make the gradient values K/km
 
-%Not sure if you wanted these plots - but putting them in if you do 
 figure(3);
 pcolor(longitude,latitude,1000*nanmean(sstgrad_jan_79_01,3)');shading flat; cb = colorbar;caxis([0 0.04])%cmocean balance;
 ylabel(cb,'∇SST K/km');
