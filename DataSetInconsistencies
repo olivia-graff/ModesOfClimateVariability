@@ -1,0 +1,116 @@
+%load in data from nc file 
+longitude =ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','longitude');
+latitude =ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','latitude');
+sst = ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','sst');
+%40 years of january's = 40*31*4 = 4960
+%Creating dummy variables to load data into each matrix (Part 1) 
+sst_jan = zeros(480,241,4960);
+index=0;
+shift = 1;
+
+%Part 1
+%because it's january, check for a leap year after 
+for year = 1979:2018
+    %Slice through the sst variable and load in only sst for November each
+    %year
+    year;
+    %cheatsheet for index start and stop for each year 
+    yearindexstart = index+1;
+    indexend = index +124;
+    sst_jan(:,:,1+index:124+index)=sst(:,:,shift:shift+123);
+    %if it's a leap year, add 4 time steps to the begin and end time of the
+    %slice to account for the extra day in February 
+    if mod(year,4)==0
+        shift=shift+4;
+    end
+    %beginning point for the next slice is one year later (leap years
+    %accounted for up top) 
+    shift=shift+365*4;
+    %sets up the next slice for the left side of the variable for the next
+    %year
+    index = index + 124;
+end
+
+%1979-2001(inclusive) = 23 years * 4time steps/day * 31 days = 2852 time steps
+%1:2852
+%2009-2018 inclusive = 10 years * 4 time steps/day * 31 days = 1240 time
+%steps -- Jan 1 0000Z 2009 = 3721:4960
+
+%slice & convert means to Celsius 
+sst_jan_79_01 = sst_jan(:,:,1:2852);
+sst_jan_09_18 = sst_jan(:,:,3721:4960);
+meanjan_first = nanmean(sst_jan_79_01,3) - 273.15;
+meanjan_last = nanmean(sst_jan_09_18,3) -273.15;
+
+%Part 2 - Plotting  January average SST for 1979-2001 inclusive and January average SST for 2009-2018 inclusive,:
+figure(1);
+pcolor(longitude,latitude,meanjan_first');shading flat; cb = colorbar;
+hold on; [C,h]=contour(longitude, latitude,meanjan_first',0:3:21,'LineStyle', '-','LineColor','black', 'LineWidth',2);clabel(C,h);
+ylabel(cb,'SST (deg C)');
+ylabel('Latitude');xlabel('Longitude'); title('January average SST for 1979-2001');
+figure(2);
+pcolor(longitude,latitude,meanjan_last');shading flat; cb = colorbar;
+hold on; [C,h]=contour(longitude, latitude, meanjan_last',0:3:21,'LineStyle', '-','LineColor','black', 'LineWidth',2);clabel(C,h);
+ylabel(cb,'SST (deg C)');
+ylabel('Latitude');xlabel('Longitude'); title('January average SST for 2009-2018');
+
+%Part 3: Calculating January average SST gradients (at each time step) for the first and second Jan Matricies 
+sstgrad_jan_79_01= zeros(480,241,length(sst_jan_79_01));
+for n =1:length(sst_jan_79_01)
+    %reset climategradient each time step
+    climategradient = NaN*zeros(480,241);
+    %Loop through all lat/lons and find total gradient at each lat/lon point,
+    %store in dummy matrix.
+    for i = 2:479
+        for j = 2:240
+            dx = 6371000 * (longitude(i+1)-longitude(i-1))*cosd(latitude(j))*pi/180;
+            dy = 6371000 * (latitude(j+1)-latitude(j-1))*pi/180;
+            sst_jan_79_01_zonal(i,j,n) = (sst_jan_79_01(i+1,j,n)-sst_jan_79_01(i-1,j,n))/dx; %du/dx
+            sst_jan_79_01_merid(i,j,n) = (sst_jan_79_01(i,j+1,n)-sst_jan_79_01(i,j-1,n))/dy; %dv/dy
+            climategradient(i,j) = sqrt((sst_jan_79_01_zonal(i,j,n).*sst_jan_79_01_zonal(i,j,n))+(sst_jan_79_01_merid(i,j,n).*sst_jan_79_01_merid(i,j,n)));
+        end
+    end
+    sstgrad_jan_79_01(:,:,n) = climategradient;
+end
+
+sstgrad_jan_09_18 = zeros(480,241,length(sst_jan_09_18));
+for n =1:length(sst_jan_09_18)
+    %reset climategradient each time step
+    
+    climategradient = NaN*zeros(480,241);
+    %Loop through all lat/lons and find total gradient at each lat/lon point,
+    %store in dummy matrix.
+    for i = 2:479
+        for j = 2:240
+            dx = 6371000 * (longitude(i+1)-longitude(i-1))*cosd(latitude(j))*pi/180;
+            dy = 6371000 * (latitude(j+1)-latitude(j-1))*pi/180;
+            sst_jan_09_18_zonal(i,j,n) = (sst_jan_09_18(i+1,j,n)-sst_jan_09_18(i-1,j,n))/dx; %du/dx
+            sst_jan_09_18_merid(i,j,n) = (sst_jan_09_18(i,j+1,n)-sst_jan_09_18(i,j-1,n))/dy; %dv/dy
+            climategradient(i,j) = sqrt((sst_jan_09_18_zonal(i,j,n).*sst_jan_09_18_zonal(i,j,n))+(sst_jan_09_18_merid(i,j,n).*sst_jan_09_18_merid(i,j,n)));
+        end
+    end
+    sstgrad_jan_09_18(:,:,n) = climategradient;
+end
+
+%multiplying by 1000 within the plot to make the gradient values K/km
+
+%Not sure if you wanted these plots - but putting them in if you do 
+figure(3);
+pcolor(longitude,latitude,1000*nanmean(sstgrad_jan_79_01,3)');shading flat; cb = colorbar;caxis([0 0.04])%cmocean balance;
+ylabel(cb,'∇SST K/km');
+ylabel('Latitude');xlabel('Longitude'); title('January 1979-2001 ∇SST');
+
+figure(4);
+pcolor(longitude,latitude,1000*nanmean(sstgrad_jan_09_18,3)');shading flat; cb = colorbar;caxis([0 0.04]);%caxis([-1e-5 1e-5])%cmocean balance;
+ylabel(cb,'∇SST K/km');
+ylabel('Latitude');xlabel('Longitude'); title('January 2009-2018 ∇SST');
+
+%Part 4: Plot the difference between the average SST gradient in January 1979-2001, 
+%and the average SST gradient in January 2009-2018
+graddiff = (nanmean(sstgrad_jan_09_18,3)-nanmean(sstgrad_jan_79_01,3))*1000;
+figure(5);
+pcolor(longitude,latitude,graddiff');shading flat; cb = colorbar;caxis([0 0.04]);
+ylabel(cb,'∇SST K/km');
+ylabel('Latitude');xlabel('Longitude'); title('(January 2009-2018 ∇SST) - (January 1979-2001 ∇SST)');
+
+
