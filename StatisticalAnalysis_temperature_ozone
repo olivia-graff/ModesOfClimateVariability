@@ -1,0 +1,464 @@
+%load in data 
+load('/mars/parfitt/tes_chem/ozone900.mat');
+load('/mars/parfitt/tes_chem/temp900.mat');
+
+%% Part 1
+%take every 5 grid spaces so matlab doesn't have a heart attack -- use this
+%throughout part 1 
+lon2 = lon(1:5:320); lat2 = lat(1:5:160);
+temp900_new = squeeze(temp900(1:5:320,1:5:160,1:21912)); 
+ozone900_new = squeeze(ozone900(1:5:320,1:5:160,1:21912));
+%make some dummy matricies to get this party started 
+correlation = zeros(64,32);
+pvalue = zeros(64,32);
+%loop through every lat/lon point for temperature and ozone and calculate
+%correlation coefficient, store each in r & p matricies 
+for i = 1:62
+    for j = 1:32
+            temp1 = squeeze(temp900_new(i,j,:));
+            ozone1 = squeeze(ozone900_new(i,j,:));
+            [r,p] = corrcoef(temp1,ozone1);
+            correlation(i,j) = r(2,1);
+            pvalue(i,j) = p(2,1);
+    end
+end
+%dummy matricies to hold a value for if p is significant
+x = zeros(1,1); y = zeros(1,1); 
+for i = 1:62
+    for j = 1:32
+        if pvalue(i,j) < 0.05
+                %creates an matricies of lat/lon locations that pvalue is <0.05
+                x(i,j) = lon2(i);
+                y(i,j) = lat2(j);
+        end
+    end
+end
+%Plot
+figure(1); 
+pcolor(lon2,lat2,correlation'); shading flat; colorbar; cmocean balance; 
+xticks([0 60 120 180 240 300 359]); xticklabels({'0E','60E','120E','180E','240E','300E','360E'});
+yticks([-90 -45 0 45 90]); yticklabels({'90S','45S','0','45N','90N'});
+hold on; plot(x,y,'o','MarkerEdgeColor','k');caxis([-0.8 0.8]); title({'Point-to-point Global Correlation of 900hPa Ozone Concentration',' & 900hPa Surface Temperature'});
+xlabel('Longitude');ylabel('Latitude');
+%detrend the variables
+temp1_detrended=NaN*zeros(64,32,21912); 
+ozone1_detrended=NaN*zeros(64,32,21912); 
+for i = 1:64
+    for j = 1:32
+        temp1_detrended(i,j,:) = detrend(squeeze(temp900_new(i,j,:)));
+        ozone1_detrended(i,j,:)= detrend(squeeze(ozone900_new(i,j,:)));
+    end
+end
+
+%reformats detrended variables
+temp900_detrend_reformat = zeros(64,32,15,1464); %year, time step
+ozone900_detrend_reformat = zeros(64,32,15,1464); %year, time step
+timestep =1;
+for n = 1:15 
+    n
+    for i = 1:64
+        for j = 1:32
+            %if its not a leap year
+            if rem(n,4) >0
+                %slicing out values before fake feb 29
+                temp900_detrend_reformat(i,j,n,1:236) = squeeze(temp1_detrended(i,j,timestep:timestep+235));
+                temp900_detrend_reformat(i,j,n,237:240) = NaN; %fake feb 29 for non leap year-- NaN values
+                temp900_detrend_reformat(i,j,n,241:1464) = squeeze(temp1_detrended(i,j,timestep+236:timestep+1459));%pulls values from detrended temp variable
+                ozone900_detrend_reformat(i,j,n,1:236) = squeeze(ozone1_detrended(i,j,timestep:timestep+235));
+                ozone900_detrend_reformat(i,j,n,237:240) = NaN; %fake feb 29 for non leap year-- NaN values
+                ozone900_detrend_reformat(i,j,n,241:1464) = squeeze(ozone1_detrended(i,j,timestep+236:timestep+1459));%pulls values from detrended temp variable
+            else
+                %if it is a leap year
+                temp900_detrend_reformat(i,j,n,1:1464)= squeeze(temp1_detrended(i,j,timestep:timestep+1463));
+                ozone900_detrend_reformat(i,j,n,1:1464)= squeeze(ozone1_detrended(i,j,timestep:timestep+1463));
+            end
+        end
+    end
+    if rem(n,4) >0
+        timestep = timestep + 1460; %moves onto the next year, 1460 timesteps for non leap years
+    else
+        timestep = timestep + 1464; %moves onto the next year, 1464 timesteps for leap years
+    end
+end
+
+%finding long term mean at each time step & grid space
+temp_pertimestep_mean = NaN*zeros(64,32,1464);
+ozone_pertimestep_mean = NaN*zeros(64,32,1464);
+for n=1:1464
+    n
+    temp_pertimestep_mean(:,:,n) = nanmean(squeeze(temp900_detrend_reformat(:,:,:,n)),3);%takes the mean of the 15x1 matrix and find a singular mean value for that time at that grid space
+    ozone_pertimestep_mean(:,:,n) = nanmean(squeeze(ozone900_detrend_reformat(:,:,:,n)),3);%takes the mean of the 15x1 matrix and find a singular mean value for that time at that grid space
+end
+
+%remove remove the seasonal (and diurnal) cycles by subtracting long term mean from each timestep 
+temp900_removeannual = NaN*zeros(64,32,15,1464);
+ozone900_removeannual = NaN*zeros(64,32,15,1464);
+for n = 1:15
+    n
+    for nn = 1:1464
+        for i = 1:64
+            for j = 1:32
+                temp900_removeannual(i,j,n,nn) = temp900_detrend_reformat(i,j,n,nn) - temp_pertimestep_mean(i,j,nn);
+                ozone900_removeannual(i,j,n,nn) = ozone900_detrend_reformat(i,j,n,nn) - ozone_pertimestep_mean(i,j,nn);
+            end
+        end
+        
+    end
+end
+
+
+%reformat back -- basically take out annual slicing and put the detrended
+%matricies back into the same form as the original temperature and ozone
+%matricies
+temp900_detrended_reformatback_noannual = NaN*zeros(64,32,21912);
+ozone900_detrended_reformatback_noannual = NaN*zeros(64,32,21912);
+timestep = 1;
+for n = 1:15
+    n
+    for i = 1:64
+        for j = 1:32
+            if rem(n,4)>0
+                %Can skip over febrary 29 because it remains nan
+                temp900_detrended_reformatback_noannual(i,j,timestep:timestep+235) = temp900_removeannual(i,j,n,1:236);
+                temp900_detrended_reformatback_noannual(i,j,timestep+236:timestep+1459) = temp900_removeannual(i,j,n,241:1464);
+                ozone900_detrended_reformatback_noannual(i,j,timestep:timestep+235) = ozone900_removeannual(i,j,n,1:236);
+                ozone900_detrended_reformatback_noannual(i,j,timestep+236:timestep+1459) = ozone900_removeannual(i,j,n,241:1464);
+            else
+                temp900_detrended_reformatback_noannual(i,j,timestep:timestep+1463) = temp900_removeannual(i,j,n,:);
+                ozone900_detrended_reformatback_noannual(i,j,timestep:timestep+1463) = ozone900_removeannual(i,j,n,:);
+            end
+        end
+    end
+    if rem(n,4) >0
+        timestep = timestep + 1460; %moves onto the next year, 1460 timesteps for non leap years
+    else
+        timestep = timestep + 1464; %moves onto the next year, 1464 timesteps for leap years
+    end
+end
+
+%correlate detrended temperature and ozone time series, store them in
+%correlation and pvalue dummy matricies 
+correlation_detrended = zeros(64,32);
+pvalue_detrended = zeros(64,32);
+% psignificant = NaN*zeros(320,160);
+for i = 1:64
+    for j = 1:32
+        [rd,pd] = corrcoef(squeeze(temp900_detrended_reformatback_noannual(i,j,:)),squeeze(ozone900_detrended_reformatback_noannual(i,j,:)));
+        correlation_detrended(i,j) = rd(2,1);
+        pvalue_detrended(i,j) = pd(2,1);
+    end
+end
+%dummy matricies to hold a value for if p is significant
+x1 = zeros(1,1); y1 = zeros(1,1); 
+for i = 1:62
+    for j = 1:32
+        if pvalue_detrended(i,j) < 0.05
+                %creates an matricies of lat/lon locations that pvalue is <0.05
+                x1(i,j) = lon2(i);
+                y1(i,j) = lat2(j);
+        end
+    end
+end
+%Plot  global point-to-point correlation map using your detrended anomalies, 
+%including the dots for where the p-value is less than 0.05
+figure(2);
+pcolor(lon2,lat2,correlation_detrended'); shading flat; colorbar;caxis([-0.8 0.8]); cmocean balance; 
+xticks([0 60 120 180 240 300 359]); xticklabels({'0E','60E','120E','180E','240E','300E','360E'});
+yticks([-90 -45 0 45 90]); yticklabels({'90S','45S','0','45N','90N'});
+hold on; plot(x1,y1,'o','MarkerEdgeColor','k'); title({'Point-to-point Global Correlation of 900hPa Ozone Concentration',' & 900hPa Surface Temperature (detrended & no seasonal/diurnal cycle)'});
+xlabel('Longitude');ylabel('Latitude');
+% %testing 
+% figure(3);
+% subplot(2,1,1);
+% plot(1:21912, squeeze(temp900_new(29,20,:)));title('temp time series test'); 
+% subplot(2,1,2);
+% plot(1:21912, squeeze(temp900_detrended_reformatback_noannual(29,20,:))); title('temp time series detrended test'); 
+
+%% 
+%gridpoint 19.626 N : lat index 98 
+%gridpoint 155.25 E : lon index 139
+
+%% Part 2 
+%Hawaii point of 900hPa ozone and temperature anomalies
+%pulls out the 19.626 N  155.25 E point from the original temp900 data and
+%ozone900 data
+%puts into form 21912x1
+temp_hawaii = squeeze(temp900(139,98,:));
+ozone_hawaii = squeeze(ozone900(139,98,:));
+
+%detrend, take away seasonal cycle, and calculate anomalies for both ozone
+%and temp at these points (would be able to use matricies from above-- but
+%becasue I sliced out lat/lon, these exact lat/lons are not included in
+%above sliced out matricies) 
+
+%detrend the time series 
+temp_hawaii_detrend = detrend(temp_hawaii);
+ozone_hawaii_detrend = detrend(ozone_hawaii); 
+
+%remove annual cycle 
+temp_hawaii_detrend_reformat= zeros(15,1464);
+ozone_hawaii_detrend_reformat= zeros(15,1464);
+timestep = 1; 
+for n = 1:15
+    %if its not a leap year
+    if rem(n,4) >0
+        %values before fake feb 29
+        temp_hawaii_detrend_reformat(n,1:236) = squeeze(temp_hawaii_detrend(timestep:timestep+235,1));
+        temp_hawaii_detrend_reformat(n,237:240) = NaN; %fake feb 29 for non leap year-- NaN values
+        temp_hawaii_detrend_reformat(n,241:1464) = squeeze(temp_hawaii_detrend(timestep+236:timestep+1459,1));%pulls values from detrended temp variable
+        ozone_hawaii_detrend_reformat(n,1:236) = squeeze(ozone_hawaii_detrend(timestep:timestep+235,1));
+        ozone_hawaii_detrend_reformat(n,237:240) = NaN; %fake feb 29 for non leap year-- NaN values
+        ozone_hawaii_detrend_reformat(n,241:1464) = squeeze(ozone_hawaii_detrend(timestep+236:timestep+1459,1));%pulls values from detrended temp variable
+        timestep = timestep + 1460; %moves onto the next year
+    else
+        %if it is a leap year
+        temp_hawaii_detrend_reformat(n,1:1464)= squeeze(temp_hawaii_detrend(timestep:timestep+1463,1));
+        ozone_hawaii_detrend_reformat(n,1:1464)= squeeze(ozone_hawaii_detrend(timestep:timestep+1463,1));
+        timestep = timestep + 1464; %moves onto the next year
+
+    end
+end
+
+%finding long term mean at each time step of the hawaii grid point 
+temp_h_pertimestep_mean = zeros(1,1464);
+ozone_h_pertimestep_mean = zeros(1,1464);
+for n=1:1464
+    temp_h_pertimestep_mean(1,n) = nanmean(squeeze(temp_hawaii_detrend_reformat(:,n)));%takes the mean of the 15x1 matrix and find a singular mean value for that time at that grid space
+    ozone_h_pertimestep_mean(1,n) = nanmean(squeeze(ozone_hawaii_detrend_reformat(:,n)));%takes the mean of the 15x1 matrix and find a singular mean value for that time at that grid space
+end
+
+%remove annual cycle
+temp_h_removeannual = zeros(15,1464);
+ozone_h_removeannual = zeros(15,1464);
+
+for n = 1:15
+    for nn = 1:1464
+        temp_h_removeannual(n,nn) = temp_hawaii_detrend_reformat(n,nn) - temp_h_pertimestep_mean(nn);
+        ozone_h_removeannual(n,nn) = ozone_hawaii_detrend_reformat(n,nn) - ozone_h_pertimestep_mean(nn);
+    end
+end
+
+%reformat back
+temp_h_detrended_reformatback = zeros(1,21912);
+ozone_h_detrended_reformatback = zeros(1,21912);
+timestep = 1;
+for n = 1:15
+    if rem(n,4)>0
+        temp_h_detrended_reformatback(1,timestep:timestep+235) = temp_h_removeannual(n,1:236);
+        temp_h_detrended_reformatback(1,timestep+236:timestep+1459) = temp_h_removeannual(n,241:1464);
+        ozone_h_detrended_reformatback(1,timestep:timestep+235) = ozone_h_removeannual(n,1:236);
+        ozone_h_detrended_reformatback(1,timestep+236:timestep+1459) = ozone_h_removeannual(n,241:1464);
+        timestep = timestep + 1460;
+    else
+        temp_h_detrended_reformatback(1,timestep:timestep+1463) = temp_h_removeannual(n,:);
+        ozone_h_detrended_reformatback(1,timestep:timestep+1463) = ozone_h_removeannual(n,:);
+        timestep = timestep + 1464;
+    end
+end
+
+%correaltion without any lead lag 
+[r,p] = corrcoef(ozone_h_detrended_reformatback,temp_h_detrended_reformatback);
+corr_hawaii = r(2,1); 
+pvalue_hawaii = p(2,1); 
+
+
+% %testing  
+% figure(11);
+% subplot(2,1,1);
+% plot(1:21912, temp_hawaii);title('temp hawaii ts'); 
+% subplot(2,1,2);
+% plot(1:21912,temp_h_detrended_reformatback); title('temp hawaii detrended ts'); 
+% %testing -- yay 
+% figure(12);
+% subplot(2,1,1);
+% plot(1:21912, ozone_hawaii);title('ozone hawaii ts'); 
+% subplot(2,1,2);
+% plot(1:21912,ozone_h_detrended_reformatback); title('ozone hawaii detrended ts'); 
+
+
+%3 days = 12 time steps
+% Calculate  lead/lag loops correlations between ozone & temp anomalies 
+
+%Calculating lag first, and lagging the ozone variable -- temperature leads by one time step each
+%time it loops to make a total lag of 12 timesteps -> 3 days 
+correlation_lag = zeros(12,1);
+pvalue_lag = zeros(12,1);
+for i = 1:12 
+    [r,p] = corrcoef(ozone_h_detrended_reformatback(1:21912+1-i),temp_h_detrended_reformatback(i:21912));
+    correlation_lag(i,1) = r(2,1); 
+    pvalue_lag(i,1) = p(2,1);
+end
+
+%Calculating ozone lead, temperature lags , and adding a timestep to the temperature variable each
+%time it loops to make a total lead of 12 timesteps -> 3 days 
+correlation_lead = zeros(12,1);
+pvalue_lead = zeros(12,1);
+
+for i = 1:12
+    [r,p] = corrcoef(temp_h_detrended_reformatback(1:21912+1-i),ozone_h_detrended_reformatback(i:21912));
+    correlation_lead(i,1) = r(2,1); 
+    pvalue_lead(i,1) = p(2,1);
+end
+
+%lead lag dummy matrix that will hold the lead values 1:12, the correlation
+%without any manipulation in index 13, and the lag values in 14:25. 
+%Variable names are confusing me, I've gone in circles, but the way it
+%makes sense, atmospherically is to put temperature lagging
+%(correlation_lead) on the left hand side of the plot (lag side) and
+%temperature leading (correlation_lag) on the right hand side of the plot.
+%Sorry if this is confusing, let me know if you need clarification. 
+leadlag = zeros(25,1);
+leadlag(12:-1:1) = correlation_lead; 
+leadlag(13:13) = corr_hawaii; 
+leadlag(14:25) = correlation_lag; 
+%Plot!
+figure(5);
+plot(leadlag);title({'3 day Lead/ 3 day lag correlation between the 900hPa', 'ozone and temperature anomalies at 19.6260N, 155.25E'});
+xlabel('time')
+
+%% Part 3 
+%365*4 = 1460 time steps 
+
+% Manual Autocorrelation of temperature (without detrending and without seasonal
+%cycle removed) 
+manual_autocorr_temp = zeros(1460,1);
+manual_pval_temp = zeros(1460,1); 
+for i = 1:1460
+    [r,p] = corrcoef(temp_hawaii(1:21912+1-i),temp_hawaii(i:21912));
+    manual_autocorr_temp(i,1) = r(2,1); 
+    manual_pval_temp(i,1) = p(2,1); 
+end 
+
+figure(6);
+subplot(2,1,1);
+plot(manual_autocorr_temp);title('Gridpoint 19.6260N, 155.25E 900hPa Temperature Manual Autocorrelation');xlabel('time'); 
+
+%Manual Autocorrelation of detrended temperature with diurnal/seasonal
+%cycles removed)
+manual_autocorr_temp_detrended = zeros(1460,1);
+manual_pval_temp_detrended = zeros(1460,1); 
+for i = 1:1460
+    [r,p] = corrcoef(temp_h_detrended_reformatback(1:21912+1-i),temp_h_detrended_reformatback(i:21912));
+    manual_autocorr_temp_detrended(i,1) = r(2,1); 
+    manual_pval_temp_detrended(i,1) = p(2,1); 
+end 
+
+subplot(2,1,2);
+plot(manual_autocorr_temp_detrended);title('Gridpoint 19.6260N, 155.25E 900hPa Detrended Temperature Manual Autocorrelation');xlabel('time'); 
+
+%Verify using built-in autocorrelation function 
+autocorr_temp = autocorr(temp_hawaii,'NumLags', 1460);
+autocorr_temp_detrended  = autocorr(temp_h_detrended_reformatback,'NumLags', 1460);
+figure(7); 
+subplot(2,1,1);
+plot(autocorr_temp); title('Gridpoint 19.6260N, 155.25E 900hPa Temperature Function Autocorrelation');xlabel('time'); 
+
+subplot(2,1,2); 
+plot(autocorr_temp_detrended);title('Gridpoint 19.6260N, 155.25E 900hPa Detrended Temperature Function Autocorrelation');xlabel('time'); 
+
+
+%They're the same!!!! Yay!!!!! - or basically the same, error of around
+%0.01 sometimes 
+
+%% Part 4 
+
+%for temperature (detrended and not detrended) pull out only 0Z time steps 
+temp_hawaii_0z = temp_hawaii(1:4:21909); 
+temp_hawaii_detrended_0z = temp_h_detrended_reformatback(1:4:21909); 
+temp_hawaii_detrended_0z = temp_hawaii_detrended_0z.';%need to transpose this matrix to a 5478x1 instead of 1x5478, or maybe I don't, but I did anyways 
+
+% %just checking everything looks ok 
+% figure(8); 
+% plot(1:5478, temp_hawaii_0z); title('hawaii 0z temp check'); 
+% 
+% figure(9); 
+% plot(1:5478, temp_hawaii_detrended_0z); title('hawaii detrended 0z temp check'); 
+
+%Calculate power spectra of both time series using fast fourier transform
+%function 
+
+%First regular 900hPa temperature 
+% single duration: L 14610 days, sampling period T 1 (every day) sampling frequency: Fs 1
+
+t = (0:5478-1)*1;%defines a time axis must shift so that t = 0, because that's just the way it goes 
+%plot(t,temp_hawaii_0z);
+
+y = fft(temp_hawaii_0z);%fast fourier transform, find the coefficients (complex numbers)
+y(1) = [];%removes all 0Hz component, i.e. mean value of signal
+n = length(y);
+%Just want indicies of y that go up to the 1/2 length of y, because n goes in
+%both directions, and since y is an odd number, we take floor to get rid of
+%the decimal point
+power = abs(y(1:floor(n/2))).^2;
+maxfreq = 1/2;
+%frequency vector goes from sum fraction of max frequency to max frequency, get a vector of frequency associated with each time step
+freq = ((1:n/2)/(n/2))*maxfreq;
+%plot(freq,log10(power),'x');
+period = 1./freq;
+figure(8);
+subplot(2,1,1); 
+plot(period,log10(power),'x');
+hold on;plot(period,log10(power),'x');plot([365 365 365 365],[2 4 6 8]); plot([182 182 182 182],[2 4 6 8]);
+title('Gridpoint 19.6260N, 155.25E 0Z 900 hPa Temperature Power Spectra'); xlabel('period');
+
+%Now for the anomoly/detrended/no annualcycle temp data 
+% single duration: L 14610 days, sampling period T 1 (every day) sampling frequency: Fs 1
+
+t = (0:5478-1)*1;%defines a time axis must shift so that t = 0, because that's just the way it goes 
+%plot(t,temp_hawaii_detrended_0z);
+y = fft(temp_hawaii_detrended_0z);%fast fourier transform, find the coefficients (complex numbers)
+y(1) = [];%removes all 0Hz component, i.e. mean value of signal
+n = length(y);
+%Just want indicies of y that go up to the 1/2 length of y, because n goes in
+%both directions, and since y is an odd number, we take floor to get rid of
+%the decimal point
+power = abs(y(1:floor(n/2))).^2;
+maxfreq = 1/2;
+%frequency vector goes from sum fraction of max frequency to max frequency, get a vector of frequency associated with each time step
+freq = ((1:n/2)/(n/2))*maxfreq;
+%plot(freq,log10(power),'x');
+period = 1./freq;
+subplot(2,1,2); 
+plot(period,log10(power),'x');title('Gridpoint 19.6260N, 155.25E0Z Detrended 900 hPa Temperature Power Spectra'); xlabel('period');
+
+
+%% Part 5
+%band pass filtering - without detreneded variable
+%y
+%y = bandpass(x,fpass,fs); #sprcifies that x has been sampled at a rate of fs hertz
+temp_hawaii_0z_bp1 = bandpass(temp_hawaii_0z,[1/400 1/10],1);
+t = (0:5478-1)*1;
+y = fft(temp_hawaii_0z_bp1);
+y(1) = [];
+n = length(y);
+power = abs(y(1:floor(n/2))).^2;%floor ignores the decimal point in any point, only looking at first 1/2 of values becasue second half are the same as 1st half
+maxfreq = 1/2;
+freq = ((1:n/2)/(n/2))*maxfreq;
+%plot(freq,log10(power),'x'); %plotting as a test, it works! 
+
+temp_hawaii_0z_bp2 = bandpass(temp_hawaii_0z,[1/1000 1/400],1);%only keeping range that doesn't include the seasonal cycle
+%do the same thing - finding t an dy  and power values
+%plot looks like an exponential graph and actual magnitude only about 5 or
+%6
+t = (0:5478-1)*1;
+y = fft(temp_hawaii_0z_bp2);
+y(1) = [];
+n = length(y);
+power = abs(y(1:floor(n/2))).^2;%floor ignores the decimal point in any point, only looking at first 1/2 of values becasue second half are the same as 1st half
+maxfreq = 1/2;
+freq = ((1:n/2)/(n/2))*maxfreq;
+%plot(freq,log10(power),'x'); %plotting as a test, it works!! 
+
+%plot normal time series as well as both bandpass filtered time series 
+figure (10); 
+subplot(3,1,1);
+%regular time series 
+plot(1:5478,temp_hawaii_0z);title('Gridpoint 19.6260N, 155.25E 900hPa 0Z temperature time series'); 
+subplot(3,1,2); %first filter
+plot(1:5478,temp_hawaii_0z_bp1);title({'Gridpoint 19.6260N, 155.25E 900hPa 0Z temperature time series',' bandpass filtered between a period of (a) 100 and 400 days'}); 
+subplot(3,1,3); %second filter
+plot(1:5478,temp_hawaii_0z_bp2); title({'Gridpoint 19.6260N, 155.25E 900hPa 0Z temperature time series',' bandpass filtered between a period of (b) 400 and 1000 days'}); 
+
+
+
+
