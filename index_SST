@@ -1,0 +1,79 @@
+%load in data from nc file 
+longitude =ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','longitude');
+latitude =ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','latitude');
+sst = ncread('/mars/parfitt/eraint/surface_variables/sst/sst_79-18.nc','sst');
+
+%Creating dummy variables to load data into each matrix (Part 1) 
+sst_nov = zeros(480,241,4800);
+shift = 1217; %first time step (November 1, 1979) 
+index=0;
+
+%Dummy variables for years where oni is > 0.5 (13 years) and < -0.5 (14 years)
+greater_sst = zeros(480,241,1560);
+less_sst = zeros(480,241,1680);
+oni = [0.5;0.1;-0.2;2.2;-1.0;-0.9;-0.3;1.1;1.3;-1.8;-0.2;0.4;1.2;-0.3;0.0;1.0;-1.0;-0.4;2.4;-1.5;-1.5;-0.7;-0.3;1.3;0.4;0.7;-0.6;0.9;-1.5;-0.6;1.4;-1.6;-1.1;0.1;-0.2;0.6;2.6;-0.7;-0.8;0.9];
+gindex = 0;
+lindex = 0;
+
+%Loop thorugh all years 
+for year = 1:40
+    %if it's a leap year, add 4 time steps to the begin and end time of the
+    %slice to account for the extra day in February 
+    if mod(year,4)==0
+        shift=shift+4;
+    end
+    
+    %Slice through the sst variable and load in only sst for November each
+    %year
+    sst_nov(:,:,index+1:index+120)=sst(:,:,shift:shift+119);
+    
+    %Conditional statements that store November sst data points if the oni
+    %values are valid for that year.(Part 3 of Worksheet)
+    if oni(year)>0.5
+        year %just provides a visual while the code runs
+        greater_sst(:,:,gindex+1:gindex+120) = sst(:,:,shift:shift+119);
+        %sets up the next slice for the left side of the variable for the next
+        %year
+        gindex = gindex + 120;
+    elseif oni(year) <-0.5
+        year
+        less_sst(:,:,lindex+1:lindex+120) = sst(:,:,shift:shift+119);
+        lindex = lindex+120;
+    end
+    
+    %beginning point for the next slice is one year later (leap years
+    %accounted for up top) 
+    shift=shift+365*4;
+    
+    %sets up the next slice for the left side of the variable for the next
+    %year
+    index = index + 120;
+end
+%Calculate mean values 
+longterm_nov_mean = nanmean(sst_nov,3);
+gmean = nanmean(greater_sst,3);
+lmean = nanmean(less_sst,3);
+
+%Plotting when ONI is greater than + 0.5 
+figure(1);
+pcolor(longitude,latitude,gmean');shading flat; cb = colorbar;cmocean balance;
+ylabel(cb,'SST (K)');
+ylabel('Latitude');xlabel('Longitude'); title('Mean SST when ONI is > 0.5 (November,1979-2018)');
+
+%Plotting when ONI is less than - 0.5 
+figure(2);
+pcolor(longitude,latitude,lmean');shading flat; cb = colorbar;cmocean balance;
+ylabel(cb,'SST (K)');
+ylabel('Latitude');xlabel('Longitude'); title('Mean SST when ONI is < - 0.5 (November,1979-2018)');
+
+%Plotting Anomaly when ONI is greater than + 0.5 
+figure(3);
+pcolor(longitude,latitude,(gmean-longterm_nov_mean)');shading flat; cb = colorbar;caxis([-3 3]);cmocean balance;
+ylabel(cb,'SST Anomaly (K)');
+ylabel('Latitude');xlabel('Longitude'); title('Mean SST Anomaly when ONI is > 0.5 (November,1979-2018)');
+
+%Plotting Anomaly when ONI is less than - 0.5 
+figure(4);
+pcolor(longitude,latitude,(lmean-longterm_nov_mean)');shading flat; cb = colorbar;caxis([-3 3]);cmocean balance;
+ylabel(cb,'SST Anomaly (K)');
+ylabel('Latitude');xlabel('Longitude'); title('Mean SST Anomaly when ONI is < - 0.5 (November,1979-2018)');
